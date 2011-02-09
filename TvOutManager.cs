@@ -22,6 +22,7 @@ namespace IPadClient.Controls {
         CGAffineTransform startingTransform;
         private int kFPS = 15;
         private bool kUseBackgroundThread = true;
+        public bool UsePrivateAPI = false;
         
 
         public static TvOutManager SharedInstance() {
@@ -133,7 +134,6 @@ namespace IPadClient.Controls {
 
                 if (kUseBackgroundThread){
                     new Thread(UpdateLoop).Start();
-                    //new NSThread(this, new Selector("UpdateLoop:"), null);
                     }
                 else{
                     updateTimer = NSTimer.CreateScheduledTimer(1.0/kFPS,this,new Selector("UpdateTvOut:"),null, true );
@@ -161,29 +161,42 @@ namespace IPadClient.Controls {
             // UIGetScreenImage() is no longer allowed in shipping apps, see https://devforums.apple.com/thread/61338
             // however, it's better for demos, since it includes the status bar and captures animated transitions
 
-
-            UIGraphics.BeginImageContext(deviceWindow.Bounds.Size);
-            var context = UIGraphics.GetCurrentContext();
-
-            foreach (var window in UIApplication.SharedApplication.Windows) {
-                if ((!window.RespondsToSelector(new Selector("screen"))) || (window.Screen == UIScreen.MainScreen)) {
-                    context.SaveState();
-                    context.TranslateCTM(window.Center.X, window.Center.Y);
-                    context.ConcatCTM(window.Transform);
-                    context.TranslateCTM(-window.Bounds.Size.Width * window.Layer.AnchorPoint.X, -window.Bounds.Size.Height * window.Layer.AnchorPoint.Y);
-                    window.Layer.RenderInContext(context);
-                    context.RestoreState();
+            if (UsePrivateAPI){
+                CGImage cgScreen = UIGetScreenImage();
+                if (cgScreen != null){
+                    var sImage = UIImage.FromImage(cgScreen);
+                    mirrorView.Image = sImage;
+                    cgScreen.Dispose();
                 }
             }
-            image = UIGraphics.GetImageFromCurrentImageContext();
-            UIGraphics.EndImageContext();
-            mirrorView.Image = image;
+            else{
+
+                UIGraphics.BeginImageContext(deviceWindow.Bounds.Size);
+                var context = UIGraphics.GetCurrentContext();
+
+                foreach (var window in UIApplication.SharedApplication.Windows) {
+                    if ((!window.RespondsToSelector(new Selector("screen"))) || (window.Screen == UIScreen.MainScreen)) {
+                        context.SaveState();
+                        context.TranslateCTM(window.Center.X, window.Center.Y);
+                        context.ConcatCTM(window.Transform);
+                        context.TranslateCTM(-window.Bounds.Size.Width * window.Layer.AnchorPoint.X, -window.Bounds.Size.Height * window.Layer.AnchorPoint.Y);
+                        window.Layer.RenderInContext(context);
+                        context.RestoreState();
+                    }
+                }
+                image = UIGraphics.GetImageFromCurrentImageContext();
+                UIGraphics.EndImageContext();
+                mirrorView.Image = image;
+            }
+        }
+
+        private CGImage UIGetScreenImage(){
+            return CGImage.ScreenImage;
         }
 
         [Export("UpdateLoop:")]
         public void UpdateLoop(){
             using (NSAutoreleasePool pool = new NSAutoreleasePool()){
-
                 done = false;
 
                 while (!done){
@@ -208,7 +221,7 @@ namespace IPadClient.Controls {
         [Export("ScreenModeDidChangeNotification:")]
         public void ScreenModeDidChangeNotification(NSNotification notification) {
             Console.WriteLine("Screen mode changed: " + notification.Object);
-            this.StopTvOut();
+            this.StartTvOut();
         }
 
         [Export("DeviceOrientationDidChange:")]
